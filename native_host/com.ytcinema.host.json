@@ -1,0 +1,9 @@
+{
+  "name": "com.ytcinema.host",
+  "description": "YouTube Cinema native download host",
+  "path": "C:\\Users\\admin\\youtube-cinema\\native_host\\ytcinema_host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://egfjpffimdaemajgbpjfdggdlagepako/"
+  ]
+}
