@@ -1,0 +1,24 @@
+# Chrome extension build artifacts
+*.crx
+*.zip
+*.pem
+
+# Node dependencies if any
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+*.swp
+*.swo
+*~
+
+youtube-cinema-chrome/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
