@@ -1,6 +1,7 @@
 # Chrome extension build artifacts
 *.crx
 *.zip
+!youtube-cinema-release.zip
 *.pem
 
 # Node dependencies if any
