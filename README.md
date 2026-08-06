@@ -19,5 +19,3 @@ A Chrome extension that gives YouTube a cinema-style experience with ad blocking
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-
-> Replace `<Your Name>` in the `LICENSE` file with your actual name before publishing.
