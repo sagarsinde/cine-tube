@@ -11,10 +11,15 @@ A Chrome extension that gives YouTube a cinema-style experience with ad blocking
 
 ## Installation
 
+Follow these steps to install the extension in Chrome or another Chromium-based browser:
+
 1. Open Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked** and select this repository folder.
-4. Open YouTube and enjoy cinema mode.
+2. Enable **Developer mode** in the top-right corner.
+3. Click **Load unpacked**.
+4. Choose the `youtube-cinema` folder from this repository.
+5. Once it loads, open a YouTube page and check that the extension icon is visible.
+
+> The extension is ready to use after installation. You do not need to manually add or edit CSS, animation, or other files.
 
 ## License
 

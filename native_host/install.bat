@@ -1,8 +1,4 @@
 @echo off
-:: =====================================================
-:: YouTube Cinema — Native Host Installer
-:: Run this ONCE after loading the extension in Chrome
-:: =====================================================
 setlocal enabledelayedexpansion
 
 echo.
@@ -11,25 +7,45 @@ echo   YouTube Cinema — Native Host Setup
 echo  ==========================================
 echo.
 
-:: --- Get the directory of this script ---
 set "HOST_DIR=%~dp0"
 set "HOST_DIR=%HOST_DIR:~0,-1%"
 set "BAT_PATH=%HOST_DIR%\ytcinema_host.bat"
 set "MANIFEST_PATH=%HOST_DIR%\com.ytcinema.host.json"
 
-:: --- Ask for Extension ID ---
-echo Step 1: Get your Extension ID from chrome://extensions
-echo         (Make sure "Developer mode" is ON, then copy the ID)
-echo.
-set /p EXT_ID="Paste your Extension ID here: "
+:: --- Auto-detect Extension ID from Chrome profile ---
+echo Detecting extension ID...
+set "EXT_ID="
+set "CHROME_EXT=%LOCALAPPDATA%\Google\Chrome\User Data\Default\Extensions"
 
-if "%EXT_ID%"=="" (
-    echo ERROR: Extension ID cannot be empty.
+if not exist "%CHROME_EXT%" (
+    echo ERROR: Chrome extensions folder not found.
+    echo Make sure Chrome is installed and YouTube Cinema has been loaded via Load unpacked.
     pause
     exit /b 1
 )
 
-:: --- Write the manifest JSON with real paths ---
+for /d %%E in ("%CHROME_EXT%\*") do (
+    for /d %%V in ("%%E\*") do (
+        if exist "%%V\manifest.json" (
+            findstr /i /c:"YouTube Cinema" "%%V\manifest.json" >nul 2>&1
+            if !errorlevel! equ 0 (
+                set "EXT_ID=%%~nxE"
+            )
+        )
+    )
+)
+
+if "%EXT_ID%"=="" (
+    echo ERROR: YouTube Cinema extension not found in Chrome.
+    echo Please load it first via chrome://extensions > Load unpacked.
+    pause
+    exit /b 1
+)
+
+echo Found extension ID: %EXT_ID%
+echo.
+
+:: --- Write the manifest JSON ---
 echo Writing native messaging manifest...
 (
 echo {
@@ -43,29 +59,34 @@ echo   ]
 echo }
 ) > "%MANIFEST_PATH%"
 
-echo Manifest written: %MANIFEST_PATH%
-echo.
-
-:: --- Register in Windows Registry (HKCU, no admin needed) ---
+:: --- Register in Windows Registry ---
 echo Registering in Windows Registry...
-reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ytcinema.host" /ve /t REG_SZ /d "%MANIFEST_PATH%" /f
+reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ytcinema.host" /ve /t REG_SZ /d "%MANIFEST_PATH%" /f >nul 2>&1
 
-if %errorlevel% equ 0 (
-    echo.
-    echo  ==========================================
-    echo   Setup Complete!
-    echo  ==========================================
-    echo.
-    echo   yt-dlp check: Make sure yt-dlp is installed.
-    echo   Install cmd : winget install yt-dlp
-    echo.
-    echo   Restart Chrome and try the download button!
-    echo.
-) else (
-    echo.
-    echo   ERROR: Registry write failed.
-    echo   Try running as Administrator.
-    echo.
+if %errorlevel% neq 0 (
+    echo ERROR: Registry write failed. Try running as Administrator.
+    pause
+    exit /b 1
 )
 
+:: --- Install yt-dlp if missing ---
+where yt-dlp >nul 2>&1
+if %errorlevel% neq 0 (
+    echo yt-dlp not found. Installing automatically...
+    winget install yt-dlp --silent --accept-package-agreements --accept-source-agreements
+    if !errorlevel! neq 0 (
+        echo WARNING: yt-dlp install failed. You can install it manually later:
+        echo   winget install yt-dlp
+    ) else (
+        echo yt-dlp installed successfully.
+    )
+) else (
+    echo yt-dlp already installed.
+)
+
+echo.
+echo  ==========================================
+echo   Setup Complete! Restart Chrome.
+echo  ==========================================
+echo.
 pause
