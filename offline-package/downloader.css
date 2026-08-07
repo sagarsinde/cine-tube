@@ -1,0 +1,29 @@
+/* downloader.css — Toast notification for native download progress */
+
+#ytc-toast {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid #3ea6ff;
+  border-radius: 8px;
+  bottom: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-family: 'Roboto', 'Arial', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  left: 20px;
+  opacity: 0;
+  padding: 12px 24px;
+  pointer-events: none;
+  position: fixed;
+  transform: translateY(20px);
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 9999999;
+}
+#ytc-toast.ytc-toast-show {
+  opacity: 1;
+  transform: translateY(0);
+}
+#ytc-toast.ytc-toast-error {
+  border-color: #ff4e4e;
+  color: #ff4e4e;
+}

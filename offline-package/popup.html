@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>YouTube Cinema</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ════════════════════════════════════════
+       VIEW 1 — First-time Setup Screen
+  ════════════════════════════════════════ -->
+  <div id="setup-view" style="display:none">
+    <div class="setup-header">
+      <div class="setup-logo">🎬</div>
+      <h1 class="setup-title">YouTube Cinema</h1>
+      <p class="setup-sub">One-time setup needed for downloads</p>
+    </div>
+
+    <div class="setup-steps">
+      <div class="step" id="step1">
+        <div class="step-num">1</div>
+        <div class="step-text">Click <strong>Auto Setup</strong> below</div>
+      </div>
+      <div class="step" id="step2">
+        <div class="step-num">2</div>
+        <div class="step-text">Double-click the file at the bottom of Chrome</div>
+      </div>
+      <div class="step" id="step3">
+        <div class="step-num">3</div>
+        <div class="step-text">Come back and enjoy downloads!</div>
+      </div>
+    </div>
+
+    <button class="setup-btn" id="setupBtn">
+      <span id="setupBtnText">⚡ Auto Setup</span>
+    </button>
+
+    <div class="setup-status" id="setupStatus"></div>
+
+    <div class="setup-arrow-hint" id="setupArrow" style="display:none">
+      <div class="arrow-bounce">↓</div>
+      <p>Look here in Chrome — double-click <strong>ytcinema_setup.bat</strong></p>
+    </div>
+
+    <div class="setup-footer">
+      Already set up?
+      <button class="skip-btn" id="skipBtn">Skip →</button>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════
+       VIEW 2 — Main App Screen
+  ════════════════════════════════════════ -->
+  <div id="main-view">
+
+    <!-- Persistent Download Progress Banner (shown when download is active) -->
+    <div id="dl-banner" style="display:none">
+      <div class="dl-banner-top">
+        <span class="dl-banner-icon">⬇️</span>
+        <div class="dl-banner-info">
+          <span class="dl-banner-title" id="dlBannerTitle">Downloading…</span>
+          <span class="dl-banner-pct" id="dlBannerPct">0%</span>
+        </div>
+      </div>
+      <div class="dl-banner-track">
+        <div class="dl-banner-fill" id="dlBannerFill"></div>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div class="logo">🎬</div>
+        <div class="header-text">
+          <span class="brand">CinemaMode</span>
+          <span class="tagline">YouTube Upgraded</span>
+        </div>
+      </div>
+      <div class="status-pill">ACTIVE</div>
+    </div>
+
+    <!-- Download Section -->
+    <div class="section-label">DOWNLOAD</div>
+    <div class="download-box">
+      <div class="download-top">
+        <div class="download-icon">⬇️</div>
+        <div class="download-meta">
+          <span class="download-title" id="videoTitle">Open a YouTube video first</span>
+          <span class="download-url" id="videoUrl">—</span>
+        </div>
+      </div>
+      <div class="quality-row" id="qualityRow"></div>
+      <div class="quality-note" id="qualityNote"></div>
+      <button class="dl-button" id="dlBtn" disabled>
+        <span id="dlBtnText">⬇  Download</span>
+      </button>
+      <div class="dl-status" id="dlStatus"></div>
+      <div class="dl-progress-wrap" id="dlProgressWrap" style="display:none">
+        <div class="dl-progress-bar" id="dlProgressBar"></div>
+        <span class="dl-progress-pct" id="dlProgressPct">0%</span>
+      </div>
+    </div>
+
+    <!-- Feature Toggles -->
+    <div class="section-label">FEATURES</div>
+    <div class="settings">
+      <div class="row">
+        <div class="row-left">
+          <div class="icon-wrap">🚫</div>
+          <div class="row-text">
+            <span class="row-title">Ad Blocker</span>
+            <span class="row-sub">Skip &amp; hide all ads</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleAdblock" />
+          <span class="knob"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="row-left">
+          <div class="icon-wrap">🌐</div>
+          <div class="row-text">
+            <span class="row-title">Block Ads Everywhere</span>
+            <span class="row-sub">All websites, not just YouTube</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleGlobalAds" />
+          <span class="knob"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="row-left">
+          <div class="icon-wrap">💬</div>
+          <div class="row-text">
+            <span class="row-title">Hide Comments</span>
+            <span class="row-sub">Focus on content only</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleComments" />
+          <span class="knob"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="row-left">
+          <div class="icon-wrap">📋</div>
+          <div class="row-text">
+            <span class="row-title">Hide Sidebar</span>
+            <span class="row-sub">No more rabbit holes</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleSidebar" />
+          <span class="knob"></span>
+        </label>
+      </div>
+
+      <div class="row">
+        <div class="row-left">
+          <div class="icon-wrap">✨</div>
+          <div class="row-text">
+            <span class="row-title">Glow Progress Bar</span>
+            <span class="row-sub">Cinematic progress style</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggleProgress" />
+          <span class="knob"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>YouTube Cinema</span>
+      <span class="dot">·</span>
+      <span>v1.0</span>
+    </div>
+
+  </div><!-- /main-view -->
+
+  <script src="popup.js"></script>
+</body>
+</html>
