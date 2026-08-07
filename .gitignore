@@ -4,6 +4,9 @@
 !youtube-cinema-release.zip
 *.pem
 
+# Chrome-generated compiled rulesets (rebuilt automatically from rules.json)
+_metadata/
+
 # Node dependencies if any
 node_modules/
 
