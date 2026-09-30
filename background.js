@@ -118,9 +118,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // yt-dlp --dump-json can hang on a slow network; never leave the caller
     // waiting on a response that will not arrive.
+    // Increased timeout to 120s for complex videos / slow YouTube responses.
     const timer = setTimeout(
-      () => finish({ ok: false, error: 'Timed out fetching formats.' }),
-      35000
+      () => finish({ ok: false, error: 'Timed out fetching formats. Check your connection or try again.' }),
+      120000
     );
 
     port.onMessage.addListener((msg) => {

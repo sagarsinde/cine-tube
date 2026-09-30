@@ -18,7 +18,8 @@ const settings = {
   hideComments: true,
   hideSidebar: false,
   customProgress: true,
-  adBlocker: true
+  adBlocker: true,
+  sponsorSkip: true
 };
 
 const applySettings = (update) => {
@@ -38,7 +39,7 @@ const applySettings = (update) => {
 };
 
 chrome.storage.sync.get(
-  { hideComments: true, hideSidebar: false, customProgress: true, adBlocker: true },
+  { hideComments: true, hideSidebar: false, customProgress: true, adBlocker: true, sponsorSkip: true },
   applySettings
 );
 
@@ -124,6 +125,12 @@ let lastPostAdCardCheck = 0;
 let lastSponsoredSidebarCheck = 0;
 let lastAdEndTime = 0;
 let wasAdShowing = false;
+
+// Page Visibility API - pause intervals when tab is hidden
+let isTabVisible = !document.hidden;
+document.addEventListener('visibilitychange', () => {
+  isTabVisible = !document.hidden;
+});
 
 function hideAdSurface(el) {
   el.style.setProperty('display', 'none', 'important');
@@ -391,6 +398,7 @@ function callPlayerSkipApi() {
 
 setInterval(() => {
   if (!settings.adBlocker) return;
+  if (!isTabVisible) return;  // Pause when tab is hidden (battery/CPU savings)
 
   // (Re)start the observer if it was never started or the player was replaced
   if (!adObserver || (adObserverTarget && !document.body.contains(adObserverTarget))) {
@@ -462,4 +470,109 @@ setInterval(() => {
     adFallbackSince = 0;
   }
 }, 300);
+
+// ─────────────────────────────────────────────────────────
+// SPONSOR SKIP — SponsorBlock public API
+// https://sponsor.ajay.app — CC BY-NC-SA 4.0
+// ─────────────────────────────────────────────────────────
+
+let sponsorSegments = [];
+let lastFetchedVideoId = null;
+let sponsorToastTimer = null;
+let sponsorToastEl = null;
+
+function getVideoId() {
+  try { return new URLSearchParams(location.search).get('v'); } catch { return null; }
+}
+
+function getSponsorToast() {
+  if (sponsorToastEl && document.body.contains(sponsorToastEl)) return sponsorToastEl;
+  const player = document.querySelector('#movie_player, .html5-video-player');
+  if (!player) return null;
+  const el = document.createElement('div');
+  el.id = 'ytc-sponsor-toast';
+  player.appendChild(el);
+  sponsorToastEl = el;
+  return el;
+}
+
+function showSponsorToast(secondsLeft) {
+  const el = getSponsorToast();
+  if (!el) return;
+  el.textContent = `Sponsor skipping in ${secondsLeft}s…`;
+  el.classList.add('ytc-toast-visible');
+}
+
+function hideSponsorToast() {
+  if (sponsorToastEl) sponsorToastEl.classList.remove('ytc-toast-visible');
+  if (sponsorToastTimer) { clearInterval(sponsorToastTimer); sponsorToastTimer = null; }
+}
+
+async function fetchSponsorSegments(videoId) {
+  if (!videoId || videoId === lastFetchedVideoId) return;
+  lastFetchedVideoId = videoId;
+  sponsorSegments = [];
+  hideSponsorToast();
+  try {
+    const cats = encodeURIComponent(JSON.stringify(
+      ['sponsor', 'selfpromo', 'interaction', 'intro', 'outro', 'preview', 'filler']
+    ));
+    const res = await fetch(`https://sponsor.ajay.app/api/skipSegments?videoID=${videoId}&categories=${cats}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    sponsorSegments = data.map(s => ({ start: s.segment[0], end: s.segment[1] }));
+  } catch { /* network failure or no segments — silently ignore */ }
+}
+
+const WARN_SECONDS = 5;
+let toastCountdown = 0;
+
+setInterval(() => {
+  if (!settings.sponsorSkip || !sponsorSegments.length) {
+    hideSponsorToast();
+    return;
+  }
+  if (!isTabVisible) return;  // Pause when tab is hidden (battery/CPU savings)
+  const video = document.querySelector('video.html5-main-video');
+  if (!video || video.paused) return;
+  const t = video.currentTime;
+
+  for (const seg of sponsorSegments) {
+    // Already inside segment — skip immediately
+    if (t >= seg.start && t < seg.end) {
+      hideSponsorToast();
+      video.currentTime = seg.end;
+      return;
+    }
+
+    // Within warning window before segment starts
+    const timeUntil = seg.start - t;
+    if (timeUntil > 0 && timeUntil <= WARN_SECONDS) {
+      const secs = Math.ceil(timeUntil);
+      if (secs !== toastCountdown) {
+        toastCountdown = secs;
+        showSponsorToast(secs);
+      }
+      return;
+    }
+  }
+
+  // No upcoming segment — hide toast
+  if (toastCountdown !== 0) {
+    toastCountdown = 0;
+    hideSponsorToast();
+  }
+}, 500);
+
+// Detect YouTube SPA navigation and re-fetch on video change
+let _lastUrl = location.href;
+new MutationObserver(() => {
+  if (location.href === _lastUrl) return;
+  _lastUrl = location.href;
+  const vid = getVideoId();
+  if (vid) fetchSponsorSegments(vid);
+}).observe(document.documentElement, { subtree: true, childList: true });
+
+// Initial fetch on page load
+fetchSponsorSegments(getVideoId());
 

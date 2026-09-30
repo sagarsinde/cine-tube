@@ -213,6 +213,29 @@ ytd-subscribe-button-renderer,
   filter: brightness(0.7) !important;
 }
 
+/* Sponsor skip toast */
+#ytc-sponsor-toast {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-family: 'YouTube Sans', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 6px;
+  border-left: 3px solid #00c853;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+#ytc-sponsor-toast.ytc-toast-visible {
+  opacity: 1;
+}
+
 /* Keep the channel avatar on the watch page (under the video player) */
 ytd-video-owner-renderer a,
 ytd-video-owner-renderer a[href*="/@"],

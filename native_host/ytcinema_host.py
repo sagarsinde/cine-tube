@@ -14,13 +14,22 @@ import threading
 import shutil
 
 def find_ytdlp():
-    """Find yt-dlp executable — checks PATH first, then known winget/pip install locations."""
+    """Find yt-dlp executable — checks PATH, host folder, winget, and common pip/pipx install locations."""
     # 1. Check if it's already on PATH
     found = shutil.which('yt-dlp')
     if found:
         return found
 
-    # 2. Check common winget install location
+    # 2. Check the native host directory for a bundled yt-dlp.exe
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_exe = os.path.join(script_dir, 'yt-dlp.exe')
+    if os.path.isfile(local_exe):
+        return local_exe
+    local_unix = os.path.join(script_dir, 'yt-dlp')
+    if os.path.isfile(local_unix):
+        return local_unix
+
+    # 3. Check common winget install location
     local_app = os.environ.get('LOCALAPPDATA', '')
     winget_pattern = os.path.join(local_app, 'Microsoft', 'WinGet', 'Packages')
     if os.path.isdir(winget_pattern):
@@ -30,7 +39,7 @@ def find_ytdlp():
                 if os.path.isfile(candidate):
                     return candidate
 
-    # 3. Check common pip/pipx install locations
+    # 4. Check common pip/pipx install locations
     user_scripts = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming', 'Python', 'Scripts', 'yt-dlp.exe')
     if os.path.isfile(user_scripts):
         return user_scripts
@@ -40,10 +49,19 @@ def find_ytdlp():
 YTDLP_PATH = find_ytdlp()
 
 def find_ffmpeg():
-    """Find ffmpeg binary — checks PATH first, then winget install location."""
+    """Find ffmpeg binary — checks PATH, native host folder, then winget install location."""
     found = shutil.which('ffmpeg')
     if found:
         return os.path.dirname(found)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_exe = os.path.join(script_dir, 'ffmpeg.exe')
+    if os.path.isfile(local_exe):
+        return script_dir
+
+    local_unix = os.path.join(script_dir, 'ffmpeg')
+    if os.path.isfile(local_unix):
+        return script_dir
 
     local_app = os.environ.get('LOCALAPPDATA', '')
     winget_pattern = os.path.join(local_app, 'Microsoft', 'WinGet', 'Packages')
@@ -172,7 +190,7 @@ def get_formats(url):
     try:
         ffmpeg_flags = ['--ffmpeg-location', FFMPEG_DIR] if FFMPEG_DIR else []
         cmd = [YTDLP_PATH, '--dump-json', '--no-playlist', '--no-warnings'] + ffmpeg_flags + [url]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
         if result.returncode != 0:
             send_message({'status': 'error', 'message': 'Could not fetch video formats.'})

@@ -6,104 +6,312 @@
 // PYTHON HOST SCRIPT (embedded — written to disk by setup)
 // ─────────────────────────────────────────────────────────
 const PYTHON_HOST_SCRIPT = `#!/usr/bin/env python3
-import sys, json, struct, subprocess, os, threading
+"""
+YouTube Cinema — Native Messaging Host
+Receives a YouTube URL from the Chrome extension and downloads it via yt-dlp.
+"""
+
+import sys
+import json
+import struct
+import subprocess
+import os
+import re
+import threading
+import shutil
+
+def find_ytdlp():
+    """Find yt-dlp executable — checks PATH, host folder, winget, and pip locations."""
+    # 1. Check if it's already on PATH
+    found = shutil.which('yt-dlp')
+    if found:
+        return found
+
+    # 2. Check the native host directory for a bundled yt-dlp.exe
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_exe = os.path.join(script_dir, 'yt-dlp.exe')
+    if os.path.isfile(local_exe):
+        return local_exe
+    local_unix = os.path.join(script_dir, 'yt-dlp')
+    if os.path.isfile(local_unix):
+        return local_unix
+
+    # 3. Check common winget install location
+    local_app = os.environ.get('LOCALAPPDATA', '')
+    winget_pattern = os.path.join(local_app, 'Microsoft', 'WinGet', 'Packages')
+    if os.path.isdir(winget_pattern):
+        for folder in os.listdir(winget_pattern):
+            if 'yt-dlp.yt-dlp' in folder:
+                candidate = os.path.join(winget_pattern, folder, 'yt-dlp.exe')
+                if os.path.isfile(candidate):
+                    return candidate
+
+    # 4. Check common pip/pipx install locations
+    user_scripts = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming', 'Python', 'Scripts', 'yt-dlp.exe')
+    if os.path.isfile(user_scripts):
+        return user_scripts
+
+    return None
+
+YTDLP_PATH = find_ytdlp()
+
+def find_ffmpeg():
+    """Find ffmpeg binary — checks PATH, host folder, then winget install location."""
+    found = shutil.which('ffmpeg')
+    if found:
+        return os.path.dirname(found)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_exe = os.path.join(script_dir, 'ffmpeg.exe')
+    if os.path.isfile(local_exe):
+        return script_dir
+    local_unix = os.path.join(script_dir, 'ffmpeg')
+    if os.path.isfile(local_unix):
+        return script_dir
+
+    local_app = os.environ.get('LOCALAPPDATA', '')
+    winget_pattern = os.path.join(local_app, 'Microsoft', 'WinGet', 'Packages')
+    if os.path.isdir(winget_pattern):
+        for folder in os.listdir(winget_pattern):
+            if 'yt-dlp.FFmpeg' in folder:
+                for root, dirs, files in os.walk(os.path.join(winget_pattern, folder)):
+                    if 'ffmpeg.exe' in files:
+                        return root
+    return None
+
+FFMPEG_DIR = find_ffmpeg()
 
 def read_message():
-    raw = sys.stdin.buffer.read(4)
-    if not raw: return None
-    length = struct.unpack('=I', raw)[0]
-    return json.loads(sys.stdin.buffer.read(length).decode('utf-8'))
+    """Read a native message from Chrome (4-byte length prefix + JSON)."""
+    raw_length = sys.stdin.buffer.read(4)
+    if not raw_length:
+        return None
+    message_length = struct.unpack('=I', raw_length)[0]
+    message = sys.stdin.buffer.read(message_length).decode('utf-8')
+    return json.loads(message)
 
 def send_message(data):
-    enc = json.dumps(data).encode('utf-8')
-    sys.stdout.buffer.write(struct.pack('=I', len(enc)))
-    sys.stdout.buffer.write(enc)
+    """Send a native message back to Chrome."""
+    encoded = json.dumps(data).encode('utf-8')
+    sys.stdout.buffer.write(struct.pack('=I', len(encoded)))
+    sys.stdout.buffer.write(encoded)
     sys.stdout.buffer.flush()
 
 def download_video(url, quality):
-    dl_dir = os.path.join(os.path.expanduser('~'), 'Downloads', 'YouTube Cinema')
-    os.makedirs(dl_dir, exist_ok=True)
-    fmt_map = {
-        'best':  'bestvideo+bestaudio/best',
-        '1080p': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
-        '720p':  'bestvideo[height<=720]+bestaudio/best[height<=720]',
-        '480p':  'bestvideo[height<=480]+bestaudio/best[height<=480]',
-        'audio': 'bestaudio/best',
-    }
-    fmt = fmt_map.get(quality, fmt_map['best'])
-    out = os.path.join(dl_dir, '%(title)s.%(ext)s')
+    """Run yt-dlp to download the video."""
+    downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads', 'YouTube Cinema')
+    os.makedirs(downloads_dir, exist_ok=True)
 
-    # Try to find yt-dlp (including local copy)
-    host_dir = os.path.dirname(os.path.abspath(__file__))
-    local_ytdlp = os.path.join(host_dir, 'yt-dlp.exe')
-    ytdlp_cmd = local_ytdlp if os.path.exists(local_ytdlp) else 'yt-dlp'
+    # Quality format selection. Heights are parsed from the quality id rather
+    # than looked up in a fixed table, because the picker now offers whatever
+    # heights the video actually has (144p, 4320p, …) instead of a fixed list.
+    if quality == 'audio':
+        fmt = 'bestaudio/best'
+    elif quality == 'best':
+        fmt = 'bestvideo+bestaudio/best'
+    else:
+        match = re.match(r'^(\\d+)p$', str(quality))
+        if match:
+            h = int(match.group(1))
+            fmt = f'bestvideo[height<={h}]+bestaudio/best[height<={h}]'
+        else:
+            fmt = 'bestvideo+bestaudio/best'
+
+    output_template = os.path.join(downloads_dir, '%(title)s [%(height)sp].%(ext)s')
+    if quality == 'audio':
+        output_template = os.path.join(downloads_dir, '%(title)s.%(ext)s')
+
+    if not YTDLP_PATH:
+        send_message({'status': 'error', 'message': 'yt-dlp not found. Install it: winget install yt-dlp'})
+        return
+
+    # Build base flags, including ffmpeg location for merging
+    ffmpeg_flags = ['--ffmpeg-location', FFMPEG_DIR] if FFMPEG_DIR else []
+
+    cmd = [
+        YTDLP_PATH,
+        '--format', fmt,
+        '--merge-output-format', 'mp4',
+        '--output', output_template,
+        '--no-playlist',
+        '--progress',
+        '--newline',
+    ] + ffmpeg_flags + [url]
 
     if quality == 'audio':
-        cmd = [ytdlp_cmd, '--format', fmt, '--extract-audio',
-               '--audio-format', 'mp3', '--audio-quality', '0',
-               '--output', out, '--no-playlist', '--newline', url]
-    else:
-        cmd = [ytdlp_cmd, '--format', fmt, '--merge-output-format', 'mp4',
-               '--output', out, '--no-playlist', '--newline', url]
+        cmd = [
+            YTDLP_PATH,
+            '--format', fmt,
+            '--extract-audio',
+            '--audio-format', 'mp3',
+            '--audio-quality', '0',
+            '--output', output_template,
+            '--no-playlist',
+            '--newline',
+        ] + ffmpeg_flags + [url]
+
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True)
-        send_message({'status': 'started', 'message': 'Downloading...'})
-        for line in proc.stdout:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        send_message({'status': 'started', 'message': f'Downloading ({quality})...'})
+
+        for line in process.stdout:
             line = line.strip()
             if '[download]' in line and '%' in line:
+                # Parse progress percentage
                 try:
-                    parts = [p for p in line.split() if '%' in p]
-                    if parts:
-                        send_message({'status': 'progress',
-                                      'percent': parts[0].replace('%','')})
-                except Exception: pass
-        proc.wait()
-        if proc.returncode == 0:
-            send_message({'status': 'done', 'folder': dl_dir})
+                    part = [p for p in line.split() if '%' in p]
+                    if part:
+                        pct = part[0].replace('%', '')
+                        send_message({'status': 'progress', 'percent': pct})
+                except Exception:
+                    pass
+
+        process.wait()
+
+        if process.returncode == 0:
+            send_message({'status': 'done', 'message': f'Saved to ~/Downloads/YouTube Cinema/', 'folder': downloads_dir})
         else:
-            send_message({'status': 'error',
-                          'message': 'Download failed. Try updating yt-dlp.'})
+            send_message({'status': 'error', 'message': 'yt-dlp failed. Make sure yt-dlp is installed and up to date.'})
+
     except FileNotFoundError:
-        send_message({'status': 'error',
-                      'message': 'yt-dlp not found. Re-run setup.'})
+        send_message({
+            'status': 'error',
+            'message': f'yt-dlp not found at {YTDLP_PATH}. Try reinstalling: winget install yt-dlp'
+        })
     except Exception as e:
         send_message({'status': 'error', 'message': str(e)})
 
-while True:
-    msg = read_message()
-    if msg is None: break
-    if msg.get('action') == 'download':
-        download_video(msg.get('url',''), msg.get('quality','best'))
-    elif msg.get('action') == 'ping':
-        send_message({'status': 'ok'})
+def get_formats(url):
+    """Fetch available formats for a video using yt-dlp --dump-json."""
+    if not YTDLP_PATH:
+        send_message({'status': 'error', 'message': 'yt-dlp not found.'})
+        return
+
+    try:
+        ffmpeg_flags = ['--ffmpeg-location', FFMPEG_DIR] if FFMPEG_DIR else []
+        cmd = [YTDLP_PATH, '--dump-json', '--no-playlist', '--no-warnings'] + ffmpeg_flags + [url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        if result.returncode != 0:
+            send_message({'status': 'error', 'message': 'Could not fetch video formats.'})
+            return
+
+        data = json.loads(result.stdout)
+        formats = data.get('formats', [])
+        title = data.get('title', 'Video')
+        duration = data.get('duration', 0)
+
+        # Best variant per height. yt-dlp lists several encodings for the same
+        # height (av01/vp9/avc1); keep whichever has the highest bitrate so the
+        # size estimate shown in the picker matches what actually downloads.
+        best_by_height = {}
+        audio_size = 0
+
+        for f in formats:
+            vcodec = f.get('vcodec') or 'none'
+            acodec = f.get('acodec') or 'none'
+            size = f.get('filesize') or f.get('filesize_approx') or 0
+
+            if vcodec == 'none' and acodec != 'none':
+                audio_size = max(audio_size, size or 0)
+                continue
+
+            h = f.get('height')
+            if not h or vcodec == 'none':
+                continue
+
+            tbr = f.get('tbr') or f.get('vbr') or 0
+            existing = best_by_height.get(h)
+            if existing is None or (tbr or 0) > (existing.get('tbr') or 0):
+                best_by_height[h] = {
+                    'label': f'{h}p',
+                    'height': h,
+                    'quality_id': f'{h}p',
+                    'ext': f.get('ext', 'mp4'),
+                    'fps': f.get('fps'),
+                    'tbr': round(tbr) if tbr else None,
+                    'filesize': size or None
+                }
+
+        video_options = sorted(
+            best_by_height.values(), key=lambda x: x['height'], reverse=True
+        )
+
+        # Video-only streams get merged with an audio track, so include the
+        # audio bytes in the estimate.
+        for opt in video_options:
+            if opt['filesize'] and audio_size:
+                opt['filesize'] = opt['filesize'] + audio_size
+
+        send_message({
+            'status': 'formats',
+            'title': title,
+            'duration': duration,
+            'video_options': video_options,
+            'audio_filesize': audio_size or None,
+            'has_audio': audio_size > 0
+        })
+
+    except subprocess.TimeoutExpired:
+        send_message({'status': 'error', 'message': 'Timed out fetching formats.'})
+    except Exception as e:
+        send_message({'status': 'error', 'message': str(e)})
+
+
+def main():
+    while True:
+        message = read_message()
+        if message is None:
+            break
+        action = message.get('action')
+        if action == 'download':
+            url = message.get('url', '')
+            quality = message.get('quality', 'best')
+            # Run download in background so we can send updates
+            t = threading.Thread(target=download_video, args=(url, quality), daemon=True)
+            t.start()
+            t.join()
+        elif action == 'getFormats':
+            url = message.get('url', '')
+            t = threading.Thread(target=get_formats, args=(url,), daemon=True)
+            t.start()
+            t.join()
+        elif action == 'ping':
+            send_message({'status': 'ok', 'message': 'Native host is running'})
+
+if __name__ == '__main__':
+    main()
 `;
 
 // ─────────────────────────────────────────────────────────
 // GENERATE SELF-INSTALLING BATCH FILE
 // ─────────────────────────────────────────────────────────
 function generateSetupBat(extensionId) {
-  // Escape backslashes for echoing inside batch
-  const pyLines = PYTHON_HOST_SCRIPT
-    .split('\n')
-    .map(l => l
-      .replace(/%/g, '%%')    // escape % in batch
-      .replace(/>/g, '^>')    // escape redirection chars
-      .replace(/</g, '^<')
-      .replace(/&/g, '^&')
-      .replace(/\|/g, '^|')
-    )
-    .join('\r\n');
+  // Base64 encode Python script to avoid batch escaping issues
+  const pyBase64 = btoa(PYTHON_HOST_SCRIPT);
 
   return `@echo off
 setlocal enabledelayedexpansion
-title YouTube Cinema - Auto Setup
-color 0A
+title YouTube Cinema Setup
+color 0B
+mode con cols=65 lines=20
 echo.
-echo  ================================================
-echo   YouTube Cinema - Auto Setup
-echo   This will take about 30 seconds...
-echo  ================================================
+echo  =============================================================
+echo   YouTube Cinema - Installer
+echo  =============================================================
+echo.
+echo  This installer will:
+echo    - Install yt-dlp (video downloader)
+echo    - Connect the extension to the downloader
+echo.
+echo  Takes about 30 seconds. Keep this window open.
+echo  =============================================================
 echo.
 
 :: Create host directory
@@ -112,10 +320,8 @@ if not exist "%HOSTDIR%" mkdir "%HOSTDIR%"
 
 echo [1/4] Writing download engine...
 
-:: Write Python host script
-(
-${pyLines}
-) > "%HOSTDIR%\\ytcinema_host.py"
+:: Write Python host script using PowerShell (avoids batch escaping hell)
+powershell -NoProfile -Command "[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${pyBase64}')) | Out-File -FilePath '%HOSTDIR%\\ytcinema_host.py' -Encoding UTF8"
 
 :: Write batch wrapper
 (
@@ -167,12 +373,21 @@ echo [4/4] Finalizing...
 timeout /t 1 /nobreak >nul
 
 echo.
-echo  ================================================
+echo  =============================================================
 echo   Setup Complete!
-echo   Restart Chrome and click the extension icon.
-echo  ================================================
+echo  =============================================================
 echo.
-pause
+echo  What to do next:
+echo    1. Close Chrome completely
+echo    2. Reopen Chrome
+echo    3. Click the YouTube Cinema icon
+echo.
+echo  The downloader is now ready to use!
+echo  =============================================================
+echo.
+echo  Press any key to close this window...
+pause >nul
+exit
 `;
 }
 
@@ -258,7 +473,7 @@ function initSetupView() {
       // Step 2 — show download arrow
       setStep(2);
       document.getElementById('setupBtnText').textContent = '✅ File Downloaded!';
-      status.textContent = 'Double-click the file to install everything automatically.';
+      status.textContent = '📁 Open your Downloads folder and double-click "ytcinema_setup.bat" to install.';
       status.className = 'setup-status done';
       document.getElementById('setupArrow').style.display = 'block';
       setStep(2);
@@ -531,16 +746,17 @@ function startDownload() {
 // SETTINGS
 // ─────────────────────────────────────────────────────────
 const toggleMap = {
-  toggleAdblock:  'adBlocker',
-  toggleGlobalAds: 'globalAdBlock',
-  toggleComments: 'hideComments',
-  toggleSidebar:  'hideSidebar',
-  toggleProgress: 'customProgress'
+  toggleAdblock:    'adBlocker',
+  toggleGlobalAds:  'globalAdBlock',
+  toggleComments:   'hideComments',
+  toggleSidebar:    'hideSidebar',
+  toggleProgress:   'customProgress',
+  toggleSponsorSkip: 'sponsorSkip'
 };
 
 function loadSettings() {
   chrome.storage.sync.get(
-    { adBlocker: true, globalAdBlock: true, hideComments: true, hideSidebar: false, customProgress: true },
+    { adBlocker: true, globalAdBlock: true, hideComments: true, hideSidebar: false, customProgress: true, sponsorSkip: true },
     (s) => {
       Object.entries(toggleMap).forEach(([id, key]) => {
         const el = document.getElementById(id);

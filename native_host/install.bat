@@ -12,32 +12,46 @@ set "HOST_DIR=%HOST_DIR:~0,-1%"
 set "BAT_PATH=%HOST_DIR%\ytcinema_host.bat"
 set "MANIFEST_PATH=%HOST_DIR%\com.ytcinema.host.json"
 
-:: --- Auto-detect Extension ID from Chrome profile ---
+:: --- Auto-detect Extension ID from Chrome ---
 echo Detecting extension ID...
 set "EXT_ID="
-set "CHROME_EXT=%LOCALAPPDATA%\Google\Chrome\User Data\Default\Extensions"
+set "PREFS=%LOCALAPPDATA%\Google\Chrome\User Data\Default\Preferences"
 
-if not exist "%CHROME_EXT%" (
-    echo ERROR: Chrome extensions folder not found.
-    echo Make sure Chrome is installed and YouTube Cinema has been loaded via Load unpacked.
+if not exist "%PREFS%" (
+    echo ERROR: Chrome not found. Install Chrome and load the extension first.
     pause
     exit /b 1
 )
 
-for /d %%E in ("%CHROME_EXT%\*") do (
-    for /d %%V in ("%%E\*") do (
-        if exist "%%V\manifest.json" (
-            findstr /i /c:"YouTube Cinema" "%%V\manifest.json" >nul 2>&1
-            if !errorlevel! equ 0 (
-                set "EXT_ID=%%~nxE"
-            )
+:: Find the line containing this extension's path in Preferences
+:: Chrome stores unpacked extensions like: "ID": {"path": "C:\\Users\\...\\youtube-cinema", ...}
+for /f "usebackq tokens=*" %%L in (`findstr /i /c:"youtube-cinema" "%PREFS%"`) do (
+    set "LINE=%%L"
+    :: Extract 32-char hex ID before the colon
+    for /f "tokens=1 delims=:" %%A in ("!LINE!") do (
+        set "CANDIDATE=%%A"
+        set "CANDIDATE=!CANDIDATE:"=!"
+        set "CANDIDATE=!CANDIDATE: =!"
+        :: Valid extension IDs are exactly 32 lowercase letters
+        echo !CANDIDATE! | findstr /r "^[a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p][a-p]$" >nul
+        if !errorlevel! equ 0 (
+            set "EXT_ID=!CANDIDATE!"
+            goto :found
         )
     )
 )
 
+:found
 if "%EXT_ID%"=="" (
-    echo ERROR: YouTube Cinema extension not found in Chrome.
-    echo Please load it first via chrome://extensions > Load unpacked.
+    echo ERROR: YouTube Cinema extension not loaded in Chrome.
+    echo.
+    echo Steps to fix:
+    echo   1. Open Chrome and go to chrome://extensions/
+    echo   2. Enable "Developer mode" ^(top-right toggle^)
+    echo   3. Click "Load unpacked"
+    echo   4. Select folder: %HOST_DIR%
+    echo   5. Re-run this installer
+    echo.
     pause
     exit /b 1
 )
